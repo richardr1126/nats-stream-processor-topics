@@ -1,0 +1,119 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "nats-stream-processor-topics.fullname" . }}
+  labels:
+    {{- include "nats-stream-processor-topics.labels" . | nindent 4 }}
+spec:
+  replicas: {{ .Values.replicaCount }}
+  selector:
+    matchLabels:
+      {{- include "nats-stream-processor-topics.selectorLabels" . | nindent 6 }}
+  template:
+    metadata:
+      {{- with .Values.podAnnotations }}
+      annotations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      labels:
+        {{- include "nats-stream-processor-topics.labels" . | nindent 8 }}
+        {{- with .Values.podLabels }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+    spec:
+      {{- with .Values.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      serviceAccountName: {{ include "nats-stream-processor-topics.serviceAccountName" . }}
+      {{- with .Values.podSecurityContext }}
+      securityContext:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      containers:
+        - name: {{ .Chart.Name }}
+          {{- with .Values.securityContext }}
+          securityContext:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          image: "{{ .Values.image.repository }}:{{ .Values.image.tag | default .Chart.AppVersion }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          ports:
+            - name: http
+              containerPort: {{ .Values.service.targetPort }}
+              protocol: TCP
+          env:
+            - name: HOME
+              value: "/home/appuser"
+            - name: HF_HOME
+              value: "{{ .Values.volumes.modelCache.mountPath }}"
+            - name: TRANSFORMERS_CACHE
+              value: "{{ .Values.volumes.modelCache.mountPath }}"
+            - name: TMPDIR
+              value: "{{ .Values.volumes.tmp.mountPath }}"
+          {{- with .Values.envFrom }}
+          envFrom:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          {{- with .Values.livenessProbe }}
+          livenessProbe:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          {{- with .Values.readinessProbe }}
+          readinessProbe:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          {{- with .Values.resources }}
+          resources:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          volumeMounts:
+            {{- if .Values.volumes.modelCache.enabled }}
+            - name: model-cache
+              mountPath: {{ .Values.volumes.modelCache.mountPath }}
+            {{- end }}
+            {{- if .Values.volumes.tmp.enabled }}
+            - name: tmp
+              mountPath: {{ .Values.volumes.tmp.mountPath }}
+            {{- end }}
+            {{- if .Values.volumes.home.enabled }}
+            - name: home
+              mountPath: {{ .Values.volumes.home.mountPath }}
+            {{- end }}
+      {{- with .Values.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.affinity }}
+      affinity:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.topologySpreadConstraints }}
+      topologySpreadConstraints:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      volumes:
+        {{- if .Values.volumes.modelCache.enabled }}
+        - name: model-cache
+          {{- if eq .Values.volumes.modelCache.type "emptyDir" }}
+          emptyDir:
+            sizeLimit: {{ .Values.volumes.modelCache.size }}
+          {{- else if eq .Values.volumes.modelCache.type "persistentVolumeClaim" }}
+          persistentVolumeClaim:
+            claimName: {{ include "nats-stream-processor-topics.fullname" . }}-model-cache
+          {{- end }}
+        {{- end }}
+        {{- if .Values.volumes.tmp.enabled }}
+        - name: tmp
+          emptyDir:
+            sizeLimit: {{ .Values.volumes.tmp.size }}
+        {{- end }}
+        {{- if .Values.volumes.home.enabled }}
+        - name: home
+          emptyDir:
+            sizeLimit: {{ .Values.volumes.home.size }}
+        {{- end }}

@@ -1,0 +1,122 @@
+# Default values for nats-stream-processor-topics.
+# This is a YAML-formatted file.
+# Declare variables to be passed into your templates.
+
+replicaCount: 3
+
+image:
+  repository: ghcr.io/richardr1126/nats-stream-processor-topics
+  pullPolicy: IfNotPresent
+  tag: ""
+
+imagePullSecrets: []
+
+nameOverride: ""
+fullnameOverride: ""
+
+serviceAccount:
+  create: true
+  automount: true
+  annotations: {}
+  name: ""
+
+podAnnotations: {}
+podLabels: {}
+
+podSecurityContext:
+  fsGroup: 1000
+
+securityContext:
+  allowPrivilegeEscalation: false
+  runAsNonRoot: true
+  runAsUser: 1000
+  readOnlyRootFilesystem: true
+  capabilities:
+    drop:
+    - ALL
+
+service:
+  type: ClusterIP
+  port: 8080
+  targetPort: 8080
+
+resources:
+  requests:
+    memory: "512Mi"
+    cpu: "1000m"
+  limits:
+    memory: "2Gi"
+    cpu: "2000m"
+
+livenessProbe:
+  httpGet:
+    path: /health
+    port: http
+  initialDelaySeconds: 30
+  periodSeconds: 30
+  timeoutSeconds: 10
+  failureThreshold: 3
+
+readinessProbe:
+  httpGet:
+    path: /ready
+    port: http
+  initialDelaySeconds: 10
+  periodSeconds: 10
+  timeoutSeconds: 5
+  failureThreshold: 3
+
+envFrom:
+  - secretRef:
+      name: nats-stream-processor-topics-env
+
+# Volume configuration for model cache (required for read-only filesystem)
+volumes:
+  modelCache:
+    enabled: true
+    # Use emptyDir for ephemeral cache (models downloaded on each pod start)
+    # For persistent cache across restarts, use persistentVolumeClaim
+    type: emptyDir  # or "persistentVolumeClaim"
+    size: "2Gi"
+    mountPath: "/var/cache/models"
+    # Only used if type is persistentVolumeClaim
+    storageClass: ""  # Use default storage class
+    accessMode: "ReadWriteOnce"
+  # Temporary directory volume (required for PyTorch/dill with read-only filesystem)
+  tmp:
+    enabled: true
+    size: "1Gi"
+    mountPath: "/tmp"
+  # Home directory volume (required for user-level cache with read-only filesystem)
+  home:
+    enabled: true
+    size: "512Mi"
+    mountPath: "/home/appuser"
+
+nodeSelector:
+  cloud.google.com/gke-nodepool: "ml-pool"
+
+tolerations:
+  - key: "dedicated"
+    operator: "Equal"
+    value: "ml"
+    effect: "NoSchedule"
+
+affinity:
+  podAntiAffinity:
+    preferredDuringSchedulingIgnoredDuringExecution:
+      - weight: 100
+        podAffinityTerm:
+          labelSelector:
+            matchLabels:
+              app.kubernetes.io/name: nats-stream-processor-topics
+          topologyKey: kubernetes.io/hostname
+
+# Topology spread constraints to evenly distribute pods across nodes
+topologySpreadConstraints:
+  - maxSkew: 1
+    topologyKey: kubernetes.io/hostname
+    whenUnsatisfiable: ScheduleAnyway
+    labelSelector:
+      matchLabels:
+        app.kubernetes.io/name: nats-stream-processor-topics
