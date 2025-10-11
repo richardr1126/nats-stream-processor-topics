@@ -11,14 +11,14 @@ from optimum.exporters.onnx import main_export
 from onnxruntime.quantization import quantize_dynamic, QuantType
 
 # Model configuration
-MODEL_NAME = "MoritzLaurer/roberta-base-zeroshot-v2.0-c"
+MODEL_NAME = "cardiffnlp/tweet-topic-21-multi"
 MODEL_CACHE_DIR = "./model_cache_test"
-QUANTIZED_MODEL_DIR = "./model_cache_test/roberta_quantized"
+QUANTIZED_MODEL_DIR = "./model_cache_test/tweet_topic_quantized"
 
 def quantize_model():
     """Export and quantize the model."""
     print("=" * 80)
-    print("QUANTIZING ROBERTA ZERO-SHOT CLASSIFICATION MODEL")
+    print("QUANTIZING TWEET TOPIC CLASSIFICATION MODEL")
     print("=" * 80)
     print()
     
@@ -46,7 +46,7 @@ def quantize_model():
     main_export(
         model_name_or_path=MODEL_NAME,
         output=temp_dir,
-        task="sequence-classification",
+        task="auto",
         opset=14,
         cache_dir=MODEL_CACHE_DIR,
     )

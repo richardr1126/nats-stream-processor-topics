@@ -182,14 +182,16 @@ class TopicProcessorService:
                 backlog_change = pending_count - last_pending_count if last_pending_count > 0 else 0
                 
                 # Get topic distribution (top 5 topics)
+                # Use id2label from the classifier to iterate through all topics
                 topic_counts = {}
-                for topic in settings.TOPIC_LABELS:
-                    try:
-                        count = topic_predictions_total.labels(topic=topic)._value.get()
-                        if count > 0:
-                            topic_counts[topic] = int(count)
-                    except:
-                        pass
+                if topic_classifier.id2label:
+                    for topic in topic_classifier.id2label.values():
+                        try:
+                            count = topic_predictions_total.labels(topic=topic)._value.get()
+                            if count > 0:
+                                topic_counts[topic] = int(count)
+                        except:
+                            pass
                 
                 # Sort by count and get top 5
                 top_topics = sorted(topic_counts.items(), key=lambda x: x[1], reverse=True)[:5]

@@ -1,7 +1,8 @@
 import os
 import asyncio
-from typing import Dict, List, Optional
+from typing import Dict, Optional
 import time
+import numpy as np
 
 from transformers import pipeline, AutoTokenizer
 from optimum.onnxruntime import ORTModelForSequenceClassification
@@ -19,12 +20,15 @@ logger = get_logger(__name__)
 
 
 class TopicClassifier:
-    """Zero-shot topic classifier using RoBERTa model with ONNX optimization."""
+    """Multi-label topic classifier using tweet-topic-21-multi model with ONNX optimization.
+    
+    This classifier uses a RoBERTa-based model specifically trained on tweets for 
+    multi-label topic classification across 19 predefined topic categories.
+    """
     
     def __init__(self):
         self.classifier = None
-        self.topic_labels = settings.TOPIC_LABELS
-        self.hypothesis_template = settings.HYPOTHESIS_TEMPLATE
+        self.id2label = None  # Will be populated from model config
         self._model_loaded = False
         
     async def initialize(self) -> None:
@@ -40,7 +44,7 @@ class TopicClassifier:
             
             # Load model in a thread to avoid blocking
             def load_model():
-                # Load ONNX model and tokenizer separately to ensure we use the ONNX version
+                # Load ONNX model and tokenizer separately
                 model = ORTModelForSequenceClassification.from_pretrained(
                     settings.MODEL_NAME,
                     cache_dir=settings.MODEL_CACHE_DIR,
@@ -52,20 +56,28 @@ class TopicClassifier:
                     cache_dir=settings.MODEL_CACHE_DIR,
                 )
                 
-                return pipeline(
-                    "zero-shot-classification",
+                # Store id2label mapping from model config
+                id2label = model.config.id2label
+                
+                # Create text-classification pipeline
+                pipe = pipeline(
+                    "text-classification",
                     model=model,
                     tokenizer=tokenizer,
                     device=-1,  # CPU inference
-                    hypothesis_template=self.hypothesis_template,
+                    top_k=None,  # Return all labels with scores
                 )
+                
+                return pipe, id2label
             
             # Run model loading in thread pool to avoid blocking event loop
             loop = asyncio.get_event_loop()
-            self.classifier = await loop.run_in_executor(None, load_model)
+            self.classifier, self.id2label = await loop.run_in_executor(None, load_model)
             
             self._model_loaded = True
-            logger.info("Topic classifier initialized successfully", topics=self.topic_labels)
+            logger.info("Topic classifier initialized successfully", 
+                       num_labels=len(self.id2label),
+                       labels=list(self.id2label.values()))
             
         except Exception as e:
             logger.error("Failed to initialize topic classifier", error=str(e))
@@ -73,7 +85,11 @@ class TopicClassifier:
             raise
     
     async def classify_topics(self, text: str) -> Optional[Dict]:
-        """Classify text into topics (multi-label or single-label based on config)."""
+        """Classify text into topics using multi-label classification.
+        
+        The model outputs sigmoid scores for each of the 19 topic categories.
+        Topics with scores >= SIGMOID_THRESHOLD are included in the results.
+        """
         if not self._model_loaded:
             raise RuntimeError("Topic classifier not initialized")
         
@@ -86,35 +102,34 @@ class TopicClassifier:
             # Run inference in thread pool to avoid blocking
             loop = asyncio.get_event_loop()
             
-            # Run zero-shot classification with multi-label setting from config
+            # Run multi-label classification
             def run_classification():
-                return self.classifier(
-                    text,
-                    candidate_labels=self.topic_labels,
-                    multi_label=settings.MULTI_LABEL,
-                )
+                return self.classifier(text)
             
-            result = await loop.run_in_executor(None, run_classification)
+            # Result is a list of dicts with 'label' and 'score' for all labels
+            results = await loop.run_in_executor(None, run_classification)
             
             inference_time = time.time() - start_time
             model_inference_duration_seconds.observe(inference_time)
             
-            # Process results - filter by confidence threshold
+            # Process results - filter by sigmoid threshold
             topics = []
             probabilities = {}
             
-            for label, score in zip(result['labels'], result['scores']):
-                probabilities[label] = float(score)
-                if score >= settings.CONFIDENCE_THRESHOLD:
+            # results is a list of label-score pairs for all 19 labels
+            for result in results[0] if isinstance(results[0], list) else results:
+                label = result['label']
+                score = float(result['score'])
+                probabilities[label] = score
+                
+                # Apply sigmoid threshold for multi-label classification
+                if score >= settings.SIGMOID_THRESHOLD:
                     topics.append(label)
             
-            # If no topics meet threshold, use the top one
-            if not topics and result['labels']:
-                topics = [result['labels'][0]]
-            
             # Get top topic and confidence
-            top_topic = result['labels'][0] if result['labels'] else "unknown"
-            top_confidence = float(result['scores'][0]) if result['scores'] else 0.0
+            sorted_results = sorted(probabilities.items(), key=lambda x: x[1], reverse=True)
+            top_topic = sorted_results[0][0] if sorted_results else "unknown"
+            top_confidence = sorted_results[0][1] if sorted_results else 0.0
             
             # Update metrics for each identified topic
             for topic in topics:

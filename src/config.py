@@ -1,22 +1,5 @@
 import os
-from dataclasses import dataclass, field
-from typing import List
-
-
-def _get_topic_labels() -> List[str]:
-    """Parse topic labels from environment variable.
-    
-    - politics-news: Politics, current events, environment, social issues
-    - technology-science: Tech, science, business, innovation
-    - entertainment-media: TV, movies, music, comedy, gaming
-    - sports: All sports and athletics
-    - lifestyle: Food, travel, personal interests
-    - creative-arts: Art, creativity, design
-    """
-    return os.getenv(
-        "TOPIC_LABELS", 
-        "politics-news,technology-science,entertainment-media,sports,lifestyle,creative-arts"
-    ).split(",")
+from dataclasses import dataclass
 
 
 @dataclass(frozen=True)
@@ -43,14 +26,12 @@ class Settings:
     # Output stream de-duplication window (in seconds)
     DUPLICATE_WINDOW_SECONDS: int = int(os.getenv("DUPLICATE_WINDOW_SECONDS", 600))  # 10 minutes
 
-    # Topic Classification Model
-    MODEL_NAME: str = os.getenv("MODEL_NAME", "richardr1126/roberta-base-zeroshot-v2.0-c-ONNX")
+    # Topic Classification Model (tweet-topic-21-multi)
+    MODEL_NAME: str = os.getenv("MODEL_NAME", "richardr1126/tweet-topic-21-multi-ONNX")
     MODEL_CACHE_DIR: str = os.getenv("MODEL_CACHE_DIR", "/var/cache/models")
     MAX_SEQUENCE_LENGTH: int = int(os.getenv("MAX_SEQUENCE_LENGTH", 512))
-    CONFIDENCE_THRESHOLD: float = float(os.getenv("CONFIDENCE_THRESHOLD", 0.3))
-    MULTI_LABEL: bool = os.getenv("MULTI_LABEL", "true").lower() == "true"
-    HYPOTHESIS_TEMPLATE: str = os.getenv("HYPOTHESIS_TEMPLATE", "This text is related to {}")
-    TOPIC_LABELS: List[str] = field(default_factory=_get_topic_labels)
+    # Sigmoid threshold for multi-label classification (predictions >= threshold are included)
+    SIGMOID_THRESHOLD: float = float(os.getenv("SIGMOID_THRESHOLD", 0.5))
 
     # Performance
     MAX_RETRIES: int = int(os.getenv("MAX_RETRIES", 3))
